@@ -1,56 +1,55 @@
 /**
- * lv_conf.h — LVGL v8 configuration for Fronius Gen24 Monitor
- * Waveshare ESP32-S3 AMOLED 1.75" (368×448, RM67162, 8 MB OPI PSRAM)
+ * lv_conf.h — LVGL v9 configuration for Fronius Gen24 Monitor
+ * Waveshare ESP32-S3 AMOLED 1.75" (466×466, CO5300, 8 MB OPI PSRAM)
  */
 
 #if 1  /* must be 1 to enable this file */
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
+/* Guard stdint.h — Xtensa assembler cannot process C typedef statements.
+ * When lv_blend_helium.S is preprocessed, __ASSEMBLER__ is defined, so
+ * this prevents typedef errors in the assembly build step. */
+#ifndef __ASSEMBLER__
 #include <stdint.h>
+#endif
 
 /*====================
    COLOR
  *====================*/
 #define LV_COLOR_DEPTH 16
-/* If colours look wrong on the display, try flipping this to 1 */
+/* RGB565 byte-swap: set to 1 if colours look wrong on the physical display */
 #define LV_COLOR_16_SWAP 0
 
 /*====================
-   MEMORY
+   MEMORY — use standard malloc (sourced from PSRAM on ESP32-S3)
  *====================*/
-/* Use standard malloc/free (sourced from PSRAM on ESP32-S3 with heap_caps) */
-#define LV_MEM_CUSTOM 1
-#define LV_MEM_CUSTOM_INCLUDE <stdlib.h>
-#define LV_MEM_CUSTOM_ALLOC   malloc
-#define LV_MEM_CUSTOM_FREE    free
-#define LV_MEM_CUSTOM_REALLOC realloc
+#define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
+#define LV_MEM_SIZE           (512U * 1024U)   /* fallback if custom alloc is off */
 
 /*====================
-   HAL / TICK
+   HAL / TICK — tick callback is set at runtime via lv_tick_set_cb(millis)
  *====================*/
-/* LVGL uses Arduino millis() automatically — no lv_tick_inc() calls needed */
-#define LV_TICK_CUSTOM 1
-#define LV_TICK_CUSTOM_INCLUDE   "Arduino.h"
-#define LV_TICK_CUSTOM_SYS_TIME_EXPR ((uint32_t)millis())
-
 #define LV_DPI_DEF 130
 
 /*====================
    DRAW
  *====================*/
-#define LV_DRAW_COMPLEX 1
-#define LV_SHADOW_CACHE_SIZE 0
-#define LV_CIRCLE_CACHE_SIZE 4
+#define LV_DRAW_SW_COMPLEX          1
+#define LV_DRAW_SW_SHADOW_CACHE_SIZE 0
+#define LV_DRAW_SW_CIRCLE_CACHE_SIZE 4
+/* Disable ARM SIMD acceleration — must be 0 (NONE) for Xtensa/ESP32 */
+#define LV_DRAW_SW_ASM              0
 
 /*====================
    GPU — all off
  *====================*/
-#define LV_USE_GPU_STM32_DMA2D  0
-#define LV_USE_GPU_SWM341_DMACC 0
-#define LV_USE_GPU_NXP_PXP      0
-#define LV_USE_GPU_NXP_VG_LITE  0
-#define LV_USE_GPU_SDL          0
+#define LV_USE_DRAW_SW        1
+#define LV_USE_DRAW_SDL       0
+#define LV_USE_DRAW_VGLITE    0
+#define LV_USE_DRAW_PXP       0
+#define LV_USE_DRAW_DAVE2D    0
+#define LV_USE_DRAW_DMA2D     0
 
 /*====================
    LOGGING
@@ -60,10 +59,10 @@
 /*====================
    ASSERTS
  *====================*/
-#define LV_USE_ASSERT_NULL   1
-#define LV_USE_ASSERT_MALLOC 1
-#define LV_USE_ASSERT_OBJ    0
-#define LV_USE_ASSERT_STYLE  0
+#define LV_USE_ASSERT_NULL    1
+#define LV_USE_ASSERT_MALLOC  1
+#define LV_USE_ASSERT_OBJ     0
+#define LV_USE_ASSERT_STYLE   0
 
 /*====================
    COMPILER
@@ -75,23 +74,23 @@
 /*====================
    FONTS
  *====================*/
-#define LV_FONT_MONTSERRAT_16 1
-#define LV_FONT_MONTSERRAT_20 1
-#define LV_FONT_MONTSERRAT_24 1
-#define LV_FONT_MONTSERRAT_28 1
+#define LV_FONT_MONTSERRAT_16 1   /* LVGL default font — keep enabled */
+#define LV_FONT_MONTSERRAT_40 1   /* all UI value labels */
 
 /* Disable everything else to save flash */
 #define LV_FONT_MONTSERRAT_12 0
 #define LV_FONT_MONTSERRAT_14 0
 #define LV_FONT_MONTSERRAT_18 0
+#define LV_FONT_MONTSERRAT_20 0
 #define LV_FONT_MONTSERRAT_22 0
+#define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_26 0
+#define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_30 0
 #define LV_FONT_MONTSERRAT_32 0
 #define LV_FONT_MONTSERRAT_34 0
 #define LV_FONT_MONTSERRAT_36 0
 #define LV_FONT_MONTSERRAT_38 0
-#define LV_FONT_MONTSERRAT_40 0
 #define LV_FONT_MONTSERRAT_42 0
 #define LV_FONT_MONTSERRAT_44 0
 #define LV_FONT_MONTSERRAT_46 0
@@ -115,13 +114,15 @@
 /*====================
    WIDGETS — only what we use
  *====================*/
-#define LV_USE_ARC   1
-#define LV_USE_BAR   0
-#define LV_USE_BTN   1
-#define LV_USE_LABEL 1
+#define LV_USE_ARC     1
+#define LV_USE_BAR     0
+#define LV_USE_BUTTON  1
+#define LV_USE_LABEL   1
 #define LV_LABEL_TEXT_SELECTION 0
 #define LV_LABEL_LONG_TXT_HINT  1
-#define LV_USE_LINE  0
+#define LV_USE_LINE    1   /* required by lv_scale internals */
+#define LV_USE_IMAGE   1   /* required by lv_scale internals */
+#define LV_USE_CANVAS  0
 
 /* All unused widgets off */
 #define LV_USE_ANIMIMG    0
@@ -130,7 +131,6 @@
 #define LV_USE_CHECKBOX   0
 #define LV_USE_COLORWHEEL 0
 #define LV_USE_DROPDOWN   0
-#define LV_USE_IMG        0
 #define LV_USE_IMGBTN     0
 #define LV_USE_KEYBOARD   0
 #define LV_USE_LED        0
@@ -189,10 +189,10 @@
 #define LV_USE_GRIDNAV         0
 #define LV_USE_FRAGMENT        0
 #define LV_USE_IMGFONT         0
-#define LV_USE_GPU_PERF_MONITOR 0
 #define LV_USE_MEM_MONITOR     0
 #define LV_USE_REFR_DEBUG      0
 #define LV_BUILD_EXAMPLES      0
+#define LV_BUILD_DEMOS         0
 #define LV_USE_DEMO_WIDGETS    0
 #define LV_USE_DEMO_KEYPAD_AND_ENCODER 0
 #define LV_USE_DEMO_BENCHMARK  0

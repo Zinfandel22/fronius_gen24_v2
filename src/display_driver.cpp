@@ -6,118 +6,148 @@
 #include <lvgl.h>
 
 /* ---------------------------------------------------------------
-   RM67162 display via QSPI
+   CO5300 display via QSPI
+   col_offset1=6 centres the 466-wide frame in the 480-wide panel.
    --------------------------------------------------------------- */
 static Arduino_DataBus *g_bus = new Arduino_ESP32QSPI(
     LCD_CS, LCD_SCLK, LCD_SDA0, LCD_SDA1, LCD_SDA2, LCD_SDA3);
 
-static Arduino_GFX *g_gfx = new Arduino_RM67162(g_bus, LCD_RST);
+static Arduino_GFX *g_gfx = new Arduino_CO5300(
+    g_bus, LCD_RST, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
 
 /* ---------------------------------------------------------------
    LVGL display buffers — allocated from PSRAM
-   One-tenth of the screen each; double-buffered for throughput.
    --------------------------------------------------------------- */
-static lv_disp_draw_buf_t g_draw_buf;
-static lv_color_t *g_buf1 = nullptr;
-static lv_color_t *g_buf2 = nullptr;
+static uint8_t *g_buf1 = nullptr;
+static uint8_t *g_buf2 = nullptr;
 
-static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p) {
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
-    /* draw16bitRGBBitmap accepts RGB565 which matches LV_COLOR_DEPTH 16.
-       If colours look byte-swapped, set LV_COLOR_16_SWAP 1 in lv_conf.h. */
-    g_gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)&color_p->full, w, h);
-    lv_disp_flush_ready(drv);
+    g_gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)px_map, w, h);
+    lv_display_flush_ready(disp);
 }
 
 /* ---------------------------------------------------------------
-   CST816S touch controller via I2C
+   CST9217 touch controller via I2C
+   Register 0xD000 returns 15 bytes:
+     [5]     = finger count (& 0x7F)
+     [6..10] = first touch point (5 bytes)
+       pdat[1]      = X high 8 bits (of 12-bit value)
+       pdat[2]      = Y high 8 bits
+       pdat[3] hi   = X low 4 bits
+       pdat[3] lo   = Y low 4 bits
    --------------------------------------------------------------- */
 static volatile TouchGesture g_last_gesture = GESTURE_NONE;
 
-static void cst816_reset(void) {
+static void touch_reset(void) {
     digitalWrite(TOUCH_RST, LOW);
     delay(10);
     digitalWrite(TOUCH_RST, HIGH);
     delay(50);
 }
 
-/* Read 6 registers starting at 0x00: gesture, fingers, XH, XL, YH, YL */
-static bool cst816_read(uint16_t *x, uint16_t *y, TouchGesture *gesture) {
+static bool cst9217_read(uint16_t *x, uint16_t *y, uint8_t *num_points) {
     Wire.beginTransmission(TOUCH_I2C_ADDR);
+    Wire.write(0xD0);
     Wire.write(0x00);
-    if (Wire.endTransmission(false) != 0) return false;
+    if (Wire.endTransmission(false) != 0) {
+        *num_points = 0;
+        return false;
+    }
 
-    Wire.requestFrom((uint8_t)TOUCH_I2C_ADDR, (uint8_t)6);
-    if (Wire.available() < 6) return false;
+    uint8_t buf[15];
+    Wire.requestFrom((uint8_t)TOUCH_I2C_ADDR, (uint8_t)sizeof(buf));
+    if (Wire.available() < (int)sizeof(buf)) {
+        *num_points = 0;
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(buf); i++) {
+        buf[i] = Wire.read();
+    }
 
-    uint8_t gest    = Wire.read();
-    uint8_t fingers = Wire.read();
-    uint8_t xh      = Wire.read();
-    uint8_t xl      = Wire.read();
-    uint8_t yh      = Wire.read();
-    uint8_t yl      = Wire.read();
+    *num_points = buf[5] & 0x7F;
+    if (*num_points == 0) return false;
 
-    *gesture = static_cast<TouchGesture>(gest);
-    *x = ((uint16_t)(xh & 0x0F) << 8) | xl;
-    *y = ((uint16_t)(yh & 0x0F) << 8) | yl;
-    return fingers > 0;
+    const uint8_t *pdat = buf + 6;
+    *x = ((uint16_t)pdat[1] << 4) | (pdat[3] >> 4);
+    *y = ((uint16_t)pdat[2] << 4) | (pdat[3] & 0x0F);
+    return true;
 }
 
-static void lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data) {
-    (void)drv;
-    uint16_t x, y;
-    TouchGesture gest;
+/* ---------------------------------------------------------------
+   Software swipe detection
+   Tracks start/end positions across one finger-down → finger-up cycle.
+   --------------------------------------------------------------- */
+#define SWIPE_MIN_PX  40   /* minimum travel to count as a swipe */
 
-    if (cst816_read(&x, &y, &gest)) {
-        data->point.x = (lv_coord_t)x;
-        data->point.y = (lv_coord_t)y;
-        data->state   = LV_INDEV_STATE_PR;
-        if (gest != GESTURE_NONE) {
-            g_last_gesture = gest;
+static lv_indev_state_t g_prev_touch = LV_INDEV_STATE_RELEASED;
+static int16_t g_start_x = 0, g_start_y = 0;
+static int16_t g_last_x  = 0, g_last_y  = 0;
+
+static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data) {
+    (void)indev;
+    uint16_t x, y;
+    uint8_t num;
+    bool touched = cst9217_read(&x, &y, &num);
+
+    if (touched) {
+        data->point.x = (int32_t)x;
+        data->point.y = (int32_t)y;
+        data->state   = LV_INDEV_STATE_PRESSED;
+
+        if (g_prev_touch == LV_INDEV_STATE_RELEASED) {
+            g_start_x = (int16_t)x;
+            g_start_y = (int16_t)y;
         }
+        g_last_x = (int16_t)x;
+        g_last_y = (int16_t)y;
     } else {
-        data->state = LV_INDEV_STATE_REL;
+        data->state = LV_INDEV_STATE_RELEASED;
+
+        if (g_prev_touch == LV_INDEV_STATE_PRESSED) {
+            int16_t dx  = g_last_x - g_start_x;
+            int16_t dy  = g_last_y - g_start_y;
+            int16_t adx = dx < 0 ? -dx : dx;
+            int16_t ady = dy < 0 ? -dy : dy;
+
+            if (adx >= SWIPE_MIN_PX && adx >= ady * 2) {
+                g_last_gesture = (dx < 0) ? GESTURE_SWIPE_LEFT : GESTURE_SWIPE_RIGHT;
+            } else if (ady >= SWIPE_MIN_PX && ady >= adx * 2) {
+                g_last_gesture = (dy < 0) ? GESTURE_SWIPE_UP : GESTURE_SWIPE_DOWN;
+            }
+        }
     }
+    g_prev_touch = data->state;
 }
 
 /* ---------------------------------------------------------------
    Public API
    --------------------------------------------------------------- */
 void display_driver_init(void) {
-    /* Touch reset & I2C */
     pinMode(TOUCH_RST, OUTPUT);
-    cst816_reset();
+    touch_reset();
     Wire.begin(TOUCH_SDA, TOUCH_SCL);
 
-    /* Display */
     g_gfx->begin();
-    g_gfx->fillScreen(BLACK);
+    g_gfx->fillScreen(0x0000);  /* RGB565 black */
 
-    /* LVGL init */
     lv_init();
+    lv_tick_set_cb((lv_tick_get_cb_t)millis);
 
-    /* Allocate draw buffers from PSRAM */
-    const size_t buf_px = LCD_WIDTH * (LCD_HEIGHT / 10);
-    g_buf1 = (lv_color_t *)heap_caps_malloc(buf_px * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    g_buf2 = (lv_color_t *)heap_caps_malloc(buf_px * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    lv_disp_draw_buf_init(&g_draw_buf, g_buf1, g_buf2, buf_px);
+    const size_t buf_px    = LCD_WIDTH * (LCD_HEIGHT / 10);
+    const size_t buf_bytes = buf_px * sizeof(lv_color_t);
+    g_buf1 = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
+    g_buf2 = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
 
-    /* Register display driver */
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res   = LCD_WIDTH;
-    disp_drv.ver_res   = LCD_HEIGHT;
-    disp_drv.flush_cb  = lvgl_flush_cb;
-    disp_drv.draw_buf  = &g_draw_buf;
-    lv_disp_drv_register(&disp_drv);
+    lv_display_t *disp = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
+    lv_display_set_flush_cb(disp, lvgl_flush_cb);
+    lv_display_set_buffers(disp, g_buf1, g_buf2, buf_bytes,
+                           LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    /* Register touch input device */
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.type    = LV_INDEV_TYPE_POINTER;
-    indev_drv.read_cb = lvgl_touch_cb;
-    lv_indev_drv_register(&indev_drv);
+    lv_indev_t *indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(indev, lvgl_touch_cb);
 }
 
 TouchGesture display_get_gesture(void) {

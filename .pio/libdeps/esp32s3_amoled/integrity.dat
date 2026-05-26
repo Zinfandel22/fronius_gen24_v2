@@ -1,4 +1,4 @@
+bblanchon/ArduinoJson              @ ^7.4.0
+https://github.com/moononournation/Arduino_GFX.git
 tzapu/WiFiManager                  @ ^2.0.17
-lvgl/lvgl                          @ ^8.3.11
-bblanchon/ArduinoJson              @ ^7.0.4
-moononournation/Arduino_GFX_Library @ ^1.4.7
+lvgl/lvgl                          @ ^9.5.0

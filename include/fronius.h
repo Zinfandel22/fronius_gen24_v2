@@ -6,6 +6,7 @@ struct PowerData {
     float    solar_w;        /* PV production, W — 0 at night               */
     float    consumption_w;  /* House load, W — always positive              */
     float    grid_w;         /* + = export to grid, − = import from grid     */
+    float    battery_w;      /* P_Akku: − = charging, + = discharging        */
     float    soc_pct;        /* Battery state of charge 0–100; −1 = unknown  */
     bool     valid;
     uint32_t timestamp_ms;

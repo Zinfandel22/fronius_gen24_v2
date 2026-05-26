@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('version','?'\\)\\)\")",
+      "PowerShell(Remove-Item -Recurse -Force \".pio/libdeps/esp32s3_amoled/lvgl\" -Confirm:$false)",
+      "PowerShell(Remove-Item -Force \".pio/libdeps/esp32s3_amoled/integrity.dat\" -Confirm:$false -ErrorAction SilentlyContinue)",
+      "WebFetch(domain:www.waveshare.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:registry.platformio.org)",
+      "WebFetch(domain:docs.lvgl.io)",
+      "WebFetch(domain:lvgl.io)",
+      "Bash(Remove-Item -Recurse -Force \"c:\\\\Users\\\\peter\\\\OneDrive\\\\Dokumentumok\\\\GitHub\\\\fronius_gen24_v2\\\\.pio\\\\libdeps\\\\esp32s3_amoled\\\\lvgl\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"done\")",
+      "Bash(pio run *)",
+      "PowerShell($penvPath = \"$env:USERPROFILE\\\\.platformio\\\\penv\"; if \\(Test-Path $penvPath\\) { Remove-Item -Recurse -Force $penvPath; Write-Host \"penv removed\" } else { Write-Host \"penv not found\" })",
+      "PowerShell(python --version; python3 --version 2>$null; \\(Get-Command python\\).Source)",
+      "PowerShell(Get-ChildItem \"$env:LOCALAPPDATA\\\\Programs\\\\Python\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(Get-Process -Id 19264, 19732)",
+      "PowerShell(Get-WmiObject Win32_Process -Filter \"ProcessId = 19264 OR ProcessId = 19732\")",
+      "PowerShell(Get-Process python)",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.vscode\\\\extensions\" -Directory -ErrorAction SilentlyContinue | Select-Object Name | Sort-Object Name)"
+    ]
+  }
+}
