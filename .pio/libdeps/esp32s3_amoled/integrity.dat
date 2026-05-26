@@ -1,0 +1,4 @@
+tzapu/WiFiManager                  @ ^2.0.17
+lvgl/lvgl                          @ ^8.3.11
+bblanchon/ArduinoJson              @ ^7.0.4
+moononournation/Arduino_GFX_Library @ ^1.4.7
