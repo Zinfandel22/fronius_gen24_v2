@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "config.h"
+#include "fronius_logo.h"
 #include <lvgl.h>
 #include <stdio.h>
 #include <math.h>
@@ -51,7 +52,16 @@ static lv_point_precise_t g_pts_hour[2] = {{233, 233}, {233, 233}};
 static lv_point_precise_t g_pts_min[2]  = {{233, 233}, {233, 233}};
 static lv_point_precise_t g_pts_sec[2]  = {{233, 233}, {233, 233}};
 
+/* Solar arc input watts (NVS "solar_input"); arc full scale = value × 1.1 */
+static uint32_t g_solar_input_w = 6000;
+
 static ScreenId g_current = SCREEN_MAIN;
+
+/* ---------------------------------------------------------------
+   Boot screen widgets
+   --------------------------------------------------------------- */
+static lv_obj_t *g_scr_boot        = nullptr;
+static lv_obj_t *g_lbl_boot_status = nullptr;
 
 /* ---------------------------------------------------------------
    Clock hand helper — updates tip point and refreshes the line
@@ -65,12 +75,22 @@ static void update_hand(lv_obj_t *line, lv_point_precise_t pts[2],
 }
 
 /* ---------------------------------------------------------------
+   Boot screen timer callback — fires 4 s after WiFi IP is shown
+   --------------------------------------------------------------- */
+static void boot_timer_cb(lv_timer_t *t) {
+    lv_timer_delete(t);
+    lv_scr_load_anim(g_scr_main, LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, false);
+    /* g_current is already SCREEN_MAIN */
+}
+
+/* ---------------------------------------------------------------
    Main screen builder
    --------------------------------------------------------------- */
 static void build_main_screen(void) {
     g_scr_main = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(g_scr_main, COL_BG, 0);
     lv_obj_set_style_bg_opa(g_scr_main, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g_scr_main, LV_OBJ_FLAG_SCROLLABLE);
 
     /* --- Solar arc: 270° sweep, gap at bottom --- */
     const int32_t ARC_SIZE = LCD_WIDTH - 8;
@@ -82,11 +102,10 @@ static void build_main_screen(void) {
 
     lv_arc_set_rotation(g_arc_solar, 135);
     lv_arc_set_bg_angles(g_arc_solar, 0, 270);
-    lv_arc_set_range(g_arc_solar, 0, SOLAR_MAX_W);
     lv_arc_set_value(g_arc_solar, 0);
 
     lv_obj_remove_style(g_arc_solar, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(g_arc_solar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(g_arc_solar, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_set_style_arc_color(g_arc_solar, COL_ARC_BG, LV_PART_MAIN);
     lv_obj_set_style_arc_width(g_arc_solar, 14, LV_PART_MAIN);
@@ -95,6 +114,8 @@ static void build_main_screen(void) {
 
     lv_obj_set_style_arc_color(g_arc_solar, COL_SOLAR, LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(g_arc_solar, 14, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g_arc_solar, false, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g_arc_solar, false, LV_PART_MAIN);
 
     /* --- Solar watts (top, inside arc) --- */
     g_lbl_solar = lv_label_create(g_scr_main);
@@ -151,17 +172,16 @@ static void build_main_screen(void) {
     lv_label_set_text(g_lbl_grid, "Grid: -- W");
     lv_obj_align(g_lbl_grid, LV_ALIGN_CENTER, 0, 58);
 
-    /* --- "No data" — bottom of screen, hidden until API fails --- */
+    /* --- "No data" — bottom of screen, blank until API fails --- */
     g_lbl_nodata = lv_label_create(g_scr_main);
     lv_obj_set_style_text_font(g_lbl_nodata, &lv_font_montserrat_40, 0);
     lv_obj_set_style_text_color(g_lbl_nodata, COL_NO_DATA, 0);
-    lv_obj_set_width(g_lbl_nodata, 220);
+    lv_obj_set_size(g_lbl_nodata, 220, 50);          /* fixed size — bg always covers area */
     lv_obj_set_style_text_align(g_lbl_nodata, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_bg_color(g_lbl_nodata, COL_BG, 0);
     lv_obj_set_style_bg_opa(g_lbl_nodata, LV_OPA_COVER, 0);
-    lv_label_set_text(g_lbl_nodata, "No data");
+    lv_label_set_text(g_lbl_nodata, "");              /* empty = hidden; text swap avoids ghost */
     lv_obj_align(g_lbl_nodata, LV_ALIGN_BOTTOM_MID, 0, -28);
-    lv_obj_add_flag(g_lbl_nodata, LV_OBJ_FLAG_HIDDEN);
 }
 
 /* ---------------------------------------------------------------
@@ -171,6 +191,7 @@ static void build_clock_screen(void) {
     g_scr_clock = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(g_scr_clock, COL_BG, 0);
     lv_obj_set_style_bg_opa(g_scr_clock, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g_scr_clock, LV_OBJ_FLAG_SCROLLABLE);
 
     /* --- Battery SOC arc (same 270° geometry as solar arc) --- */
     const int32_t ARC_SIZE = LCD_WIDTH - 8;
@@ -186,7 +207,7 @@ static void build_clock_screen(void) {
     lv_arc_set_value(g_arc_soc, 0);
 
     lv_obj_remove_style(g_arc_soc, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(g_arc_soc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(g_arc_soc, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_set_style_arc_color(g_arc_soc, COL_ARC_BG, LV_PART_MAIN);
     lv_obj_set_style_arc_width(g_arc_soc, 14, LV_PART_MAIN);
@@ -195,6 +216,8 @@ static void build_clock_screen(void) {
 
     lv_obj_set_style_arc_color(g_arc_soc, COL_BAT_FULL, LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(g_arc_soc, 14, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g_arc_soc, false, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g_arc_soc, false, LV_PART_MAIN);
 
     /* --- Hour marker dots (12 circles at radius 175 px from centre) --- */
     const int32_t CX = LCD_WIDTH  / 2;
@@ -266,27 +289,62 @@ static void build_clock_screen(void) {
 }
 
 /* ---------------------------------------------------------------
+   Boot screen builder
+   --------------------------------------------------------------- */
+static void build_boot_screen(void) {
+    g_scr_boot = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(g_scr_boot, COL_BG, 0);
+    lv_obj_set_style_bg_opa(g_scr_boot, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g_scr_boot, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *img = lv_image_create(g_scr_boot);
+    lv_image_set_src(img, &fronius_logo);
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 130);
+
+    lv_obj_t *lbl_sub = lv_label_create(g_scr_boot);
+    lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(lbl_sub, COL_SOLAR_LBL, 0);
+    lv_obj_set_width(lbl_sub, 340);
+    lv_obj_set_style_text_align(lbl_sub, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_sub, "Gen24 Monitor");
+    lv_obj_align(lbl_sub, LV_ALIGN_TOP_MID, 0, 270);
+
+    g_lbl_boot_status = lv_label_create(g_scr_boot);
+    lv_obj_set_style_text_font(g_lbl_boot_status, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(g_lbl_boot_status, COL_GRID_NEUT, 0);
+    lv_obj_set_width(g_lbl_boot_status, 340);
+    lv_obj_set_style_text_align(g_lbl_boot_status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(g_lbl_boot_status, "Connecting...");
+    lv_obj_align(g_lbl_boot_status, LV_ALIGN_TOP_MID, 0, 320);
+}
+
+/* ---------------------------------------------------------------
    Public API
    --------------------------------------------------------------- */
 void ui_init(void) {
     build_main_screen();
+    lv_arc_set_range(g_arc_solar, 0, (uint32_t)(g_solar_input_w * 1.1f));
+    lv_arc_set_value(g_arc_solar, 0);
+
     build_clock_screen();
-    lv_scr_load(g_scr_main);
+    build_boot_screen();
+    lv_scr_load(g_scr_boot);
 }
 
 void ui_update(const PowerData *data) {
     if (!data->valid) {
-        lv_obj_clear_flag(g_lbl_nodata, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(g_lbl_nodata, "No data");
         lv_label_set_text(g_lbl_inverter, "Inv: -- W");
         return;
     }
-    lv_obj_add_flag(g_lbl_nodata, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(g_lbl_nodata, "");
 
     char buf[32];
 
     /* Solar arc + label */
-    int32_t solar_clamped = (int32_t)fminf(data->solar_w, (float)SOLAR_MAX_W);
+    int32_t solar_clamped = (int32_t)fminf(data->solar_w, g_solar_input_w * 1.1f);
     lv_arc_set_value(g_arc_solar, solar_clamped);
+    lv_obj_invalidate(g_arc_solar);   /* force full bounding-box repaint */
 
     if (data->solar_w < 1.0f) {
         lv_label_set_text(g_lbl_solar, "-- W");
@@ -352,11 +410,14 @@ void ui_update_clock(const PowerData *data, const struct tm *t) {
         }
         int32_t soc = (int32_t)fminf(fmaxf(data->soc_pct, 0.0f), 100.0f);
         lv_arc_set_value(g_arc_soc, soc);
+        lv_obj_invalidate(g_arc_soc);    /* force full bounding-box repaint */
 
         char buf[8];
         snprintf(buf, sizeof(buf), "%.0f%%", data->soc_pct);
         lv_label_set_text(g_lbl_soc_clk, buf);
     } else {
+        lv_arc_set_value(g_arc_soc, 0);
+        lv_obj_invalidate(g_arc_soc);
         lv_label_set_text(g_lbl_soc_clk, "--%");
     }
     lv_obj_set_style_arc_color(g_arc_soc, col, LV_PART_INDICATOR);
@@ -376,15 +437,26 @@ void ui_update_clock(const PowerData *data, const struct tm *t) {
     update_hand(g_line_sec,  g_pts_sec,  148, second_deg);
 }
 
-void ui_switch_screen(ScreenId id) {
+void ui_switch_screen(ScreenId id, bool forward) {
     if (id == g_current || id >= SCREEN_COUNT) return;
 
-    lv_obj_t *target = (id == SCREEN_CLOCK) ? g_scr_clock : g_scr_main;
-    lv_scr_load_anim(target,
-        id > g_current ? LV_SCR_LOAD_ANIM_MOVE_LEFT
-                       : LV_SCR_LOAD_ANIM_MOVE_RIGHT,
+    lv_obj_t *targets[] = { g_scr_main, g_scr_clock };
+    lv_scr_load_anim(targets[id],
+        forward ? LV_SCR_LOAD_ANIM_MOVE_LEFT : LV_SCR_LOAD_ANIM_MOVE_RIGHT,
         200, 0, false);
     g_current = id;
+}
+
+void ui_set_solar_max(uint32_t w) {
+    g_solar_input_w = w;
+    lv_arc_set_range(g_arc_solar, 0, (uint32_t)(w * 1.1f));
+    lv_arc_set_value(g_arc_solar, lv_arc_get_value(g_arc_solar));
+    lv_obj_invalidate(g_arc_solar);
+}
+
+void ui_show_boot_ip(const char *ip) {
+    lv_label_set_text(g_lbl_boot_status, ip);
+    lv_timer_create(boot_timer_cb, 4000, NULL);
 }
 
 ScreenId ui_current_screen(void) {

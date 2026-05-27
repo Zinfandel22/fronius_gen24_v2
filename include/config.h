@@ -26,7 +26,7 @@
 #define TOUCH_INT  11
 
 /* Application */
-#define SOLAR_MAX_W       6600      /* arc full-scale */
+#define SOLAR_MAX_W       6000      /* arc full-scale */
 #define POLL_INTERVAL_MS  5000      /* Fronius API poll period */
 #define API_TIMEOUT_MS    4000      /* HTTP timeout */
 #define FAIL_THRESHOLD    3         /* consecutive failures before "no data" */

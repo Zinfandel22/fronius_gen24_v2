@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <WiFiManager.h>
 #include <Preferences.h>
+#include <WebServer.h>
+#include <ElegantOTA.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
@@ -19,6 +21,8 @@ static SemaphoreHandle_t g_data_mutex = nullptr;
 
 /* Inverter IP stored in NVS, filled by WiFiManager on first boot */
 static char g_inverter_ip[16] = "192.168.1.1";
+
+static WebServer g_ota_server(80);
 
 /* ---------------------------------------------------------------
    Fronius polling task — runs on core 0
@@ -62,15 +66,17 @@ static void fronius_task(void *arg) {
    Blocks until connected. Inverter IP saved to / loaded from NVS.
    --------------------------------------------------------------- */
 static void wifi_setup(void) {
-    /* Load stored inverter IP */
+    /* Load stored inverter IP and solar max */
     Preferences prefs;
     prefs.begin("fronius", true);
     String stored = prefs.getString("ip", "");
+    uint32_t stored_solar = prefs.getUInt("solar_input", 6000);
     prefs.end();
     if (stored.length() > 0) {
         stored.toCharArray(g_inverter_ip, sizeof(g_inverter_ip));
     }
-    Serial.printf("[wifi] stored inverter IP: '%s'\n", g_inverter_ip);
+    Serial.printf("[wifi] stored inverter IP: '%s', solar max: %lu W\n",
+                  g_inverter_ip, (unsigned long)stored_solar);
 
     /* Check for factory-reset gesture: hold touch INT low for 3 s at boot */
     pinMode(TOUCH_INT, INPUT_PULLUP);
@@ -88,11 +94,17 @@ static void wifi_setup(void) {
         }
     }
 
+    char solar_buf[8];
+    snprintf(solar_buf, sizeof(solar_buf), "%lu", (unsigned long)stored_solar);
+
     WiFiManagerParameter ip_param(
         "inverter_ip", "Inverter IP Address", g_inverter_ip, 16);
+    WiFiManagerParameter solar_param(
+        "solar_input", "Solar Max Watts", solar_buf, 6);
 
     WiFiManager wm;
     wm.addParameter(&ip_param);
+    wm.addParameter(&solar_param);
     wm.setConfigPortalTimeout(180);
     wm.setDebugOutput(true);   /* WiFiManager logs to Serial */
 
@@ -102,12 +114,20 @@ static void wifi_setup(void) {
     Serial.printf("[wifi] connected, local IP: %s\n",
                   WiFi.localIP().toString().c_str());
 
-    /* Persist whatever IP is now in the portal field */
+    /* Persist whatever is now in the portal fields */
     strlcpy(g_inverter_ip, ip_param.getValue(), sizeof(g_inverter_ip));
     Serial.printf("[wifi] inverter IP to use: '%s'\n", g_inverter_ip);
+
+    uint32_t solar_val = (uint32_t)atoi(solar_param.getValue());
+    if (solar_val < 100 || solar_val > 99999) solar_val = 6000;
+    Serial.printf("[wifi] solar max to use: %lu W\n", (unsigned long)solar_val);
+
     prefs.begin("fronius", false);
     prefs.putString("ip", g_inverter_ip);
+    prefs.putUInt("solar_input", solar_val);
     prefs.end();
+
+    ui_set_solar_max(solar_val);
 }
 
 /* ---------------------------------------------------------------
@@ -124,11 +144,23 @@ void setup(void) {
     ui_init();
     Serial.println("[boot] UI init done");
 
-    PowerData connecting = {};
-    connecting.valid = false;
-    ui_update(&connecting);
+    /* Force initial render so boot screen appears before WiFi blocks */
+    for (int i = 0; i < 5; i++) {
+        lv_timer_handler();
+        delay(10);
+    }
 
     wifi_setup();
+    ui_show_boot_ip(WiFi.localIP().toString().c_str());
+
+    g_ota_server.on("/", []() {
+        g_ota_server.sendHeader("Location", "/update");
+        g_ota_server.send(302, "text/plain", "");
+    });
+    ElegantOTA.begin(&g_ota_server);
+    g_ota_server.begin();
+    Serial.printf("[ota] update page at http://%s/update\n",
+                  WiFi.localIP().toString().c_str());
 
     configTime(TZ_OFFSET_SEC, DST_OFFSET_SEC, "pool.ntp.org");
     Serial.println("[boot] NTP sync started");
@@ -150,16 +182,18 @@ void setup(void) {
 }
 
 void loop(void) {
+    g_ota_server.handleClient();
+    ElegantOTA.loop();
     lv_timer_handler();
 
     /* Handle swipe gestures for screen switching */
     TouchGesture gest = display_get_gesture();
-    if (gest == GESTURE_SWIPE_LEFT) {
+    if (gest == GESTURE_SWIPE_RIGHT) {
         ScreenId next = (ScreenId)((ui_current_screen() + 1) % SCREEN_COUNT);
-        ui_switch_screen(next);
-    } else if (gest == GESTURE_SWIPE_RIGHT) {
+        ui_switch_screen(next, true);
+    } else if (gest == GESTURE_SWIPE_LEFT) {
         ScreenId prev = (ScreenId)((ui_current_screen() + SCREEN_COUNT - 1) % SCREEN_COUNT);
-        ui_switch_screen(prev);
+        ui_switch_screen(prev, false);
     }
 
     /* Copy shared data snapshot and update widgets at ~2 Hz */

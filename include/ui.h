@@ -18,7 +18,15 @@ void ui_update(const PowerData *data);
 /* Push sensor readings + current time into the clock screen's widgets. */
 void ui_update_clock(const PowerData *data, const struct tm *t);
 
-/* Switch to a different screen (animated slide). */
-void ui_switch_screen(ScreenId id);
+/* Switch to a different screen (animated slide).
+   forward=true  → new screen enters from right (swiped left)
+   forward=false → new screen enters from left  (swiped right) */
+void ui_switch_screen(ScreenId id, bool forward);
+
+/* Update solar arc full-scale. Call after WiFiManager saves a new value. */
+void ui_set_solar_max(uint32_t w);
+
+/* Show IP on boot screen and start the 4-second auto-transition to SCREEN_MAIN. */
+void ui_show_boot_ip(const char *ip);
 
 ScreenId ui_current_screen(void);
