@@ -4,6 +4,7 @@
 
 struct PowerData {
     float    solar_w;        /* PV production, W — 0 at night               */
+    float    inverter_w;     /* Inverter AC output, W — PV + battery         */
     float    consumption_w;  /* House load, W — always positive              */
     float    grid_w;         /* + = export to grid, − = import from grid     */
     float    battery_w;      /* P_Akku: − = charging, + = discharging        */

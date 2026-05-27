@@ -91,6 +91,10 @@ bool fronius_fetch(const char *inverter_ip, PowerData *out) {
     /* P_PV is null at night */
     out->solar_w = site["P_PV"].isNull() ? 0.0f : site["P_PV"].as<float>();
 
+    /* Inverter AC output — null at night when inverter is off */
+    JsonVariant inv_p = doc["Body"]["Data"]["Inverters"]["1"]["P"];
+    out->inverter_w = inv_p.isNull() ? 0.0f : inv_p.as<float>();
+
     /* Fronius returns P_Load as a negative value */
     float load = site["P_Load"].isNull() ? 0.0f : site["P_Load"].as<float>();
     out->consumption_w = fabsf(load);

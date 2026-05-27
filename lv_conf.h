@@ -75,6 +75,7 @@
    FONTS
  *====================*/
 #define LV_FONT_MONTSERRAT_16 1   /* LVGL default font — keep enabled */
+#define LV_FONT_MONTSERRAT_24 1   /* secondary value labels */
 #define LV_FONT_MONTSERRAT_40 1   /* all UI value labels */
 
 /* Disable everything else to save flash */
@@ -83,7 +84,7 @@
 #define LV_FONT_MONTSERRAT_18 0
 #define LV_FONT_MONTSERRAT_20 0
 #define LV_FONT_MONTSERRAT_22 0
-#define LV_FONT_MONTSERRAT_24 0
+/* LV_FONT_MONTSERRAT_24 enabled above */
 #define LV_FONT_MONTSERRAT_26 0
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_30 0

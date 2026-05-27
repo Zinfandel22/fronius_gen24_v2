@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <time.h>
 
 #include "config.h"
 #include "display_driver.h"
@@ -33,8 +34,8 @@ static void fronius_task(void *arg) {
         PowerData tmp = {};
         if (fronius_fetch(ip, &tmp)) {
             fails = 0;
-            Serial.printf("[fronius] OK  solar=%.0f W  load=%.0f W  grid=%+.0f W  soc=%.0f%%\n",
-                          tmp.solar_w, tmp.consumption_w, tmp.grid_w, tmp.soc_pct);
+            Serial.printf("[fronius] OK  solar=%.0f W  inv=%.0f W  load=%.0f W  grid=%+.0f W  soc=%.0f%%\n",
+                          tmp.solar_w, tmp.inverter_w, tmp.consumption_w, tmp.grid_w, tmp.soc_pct);
 
             if (xSemaphoreTake(g_data_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 g_data = tmp;
@@ -129,6 +130,9 @@ void setup(void) {
 
     wifi_setup();
 
+    configTime(TZ_OFFSET_SEC, DST_OFFSET_SEC, "pool.ntp.org");
+    Serial.println("[boot] NTP sync started");
+
     g_data_mutex = xSemaphoreCreateMutex();
 
     /* Fronius task pinned to core 0; Arduino loop() runs on core 1 */
@@ -179,6 +183,10 @@ void loop(void) {
         }
 
         ui_update(&snapshot);
+
+        struct tm timeinfo = {};
+        getLocalTime(&timeinfo);
+        ui_update_clock(&snapshot, &timeinfo);
     }
 
     delay(5);
