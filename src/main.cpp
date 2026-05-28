@@ -12,6 +12,7 @@
 #include "display_driver.h"
 #include "fronius.h"
 #include "ui.h"
+#include <XPowersLib.h>
 
 /* ---------------------------------------------------------------
    Shared state between fronius_task (core 0) and the UI (core 1)
@@ -23,6 +24,10 @@ static SemaphoreHandle_t g_data_mutex = nullptr;
 static char g_inverter_ip[16] = "192.168.1.1";
 
 static WebServer g_ota_server(80);
+
+/* AXP2101 board PMIC (shares I2C bus with CST9217 touch) */
+static XPowersAXP2101 g_pmic;
+static bool           g_pmic_ok = false;
 
 /* ---------------------------------------------------------------
    Fronius polling task — runs on core 0
@@ -141,6 +146,10 @@ void setup(void) {
     display_driver_init();
     Serial.println("[boot] display init done");
 
+    /* Wire is already up (100 kHz, SDA=15, SCL=14) from display_driver_init() */
+    g_pmic_ok = g_pmic.begin(Wire, AXP2101_I2C_ADDR, TOUCH_SDA, TOUCH_SCL);
+    Serial.printf("[pmic] AXP2101 init: %s\n", g_pmic_ok ? "OK" : "not found");
+
     ui_init();
     Serial.println("[boot] UI init done");
 
@@ -188,12 +197,19 @@ void loop(void) {
 
     /* Handle swipe gestures for screen switching */
     TouchGesture gest = display_get_gesture();
+    ScreenId cur = ui_current_screen();
     if (gest == GESTURE_SWIPE_RIGHT) {
-        ScreenId next = (ScreenId)((ui_current_screen() + 1) % SCREEN_COUNT);
-        ui_switch_screen(next, true);
+        if      (cur == SCREEN_MAIN)                       ui_switch_screen(SCREEN_CLOCK, false);
+        else if (cur == SCREEN_CLOCK || cur == SCREEN_PV)  ui_switch_screen(SCREEN_MAIN,  false);
     } else if (gest == GESTURE_SWIPE_LEFT) {
-        ScreenId prev = (ScreenId)((ui_current_screen() + SCREEN_COUNT - 1) % SCREEN_COUNT);
-        ui_switch_screen(prev, false);
+        if      (cur == SCREEN_MAIN)                       ui_switch_screen(SCREEN_CLOCK, true);
+        else if (cur == SCREEN_CLOCK || cur == SCREEN_PV)  ui_switch_screen(SCREEN_MAIN,  true);
+    } else if (gest == GESTURE_SWIPE_DOWN) {
+        if      (cur == SCREEN_CLOCK)  ui_switch_screen(SCREEN_PV,     true,  true);
+        else if (cur == SCREEN_STATUS) ui_switch_screen(SCREEN_MAIN,   true,  true);
+    } else if (gest == GESTURE_SWIPE_UP) {
+        if      (cur == SCREEN_PV)     ui_switch_screen(SCREEN_CLOCK,  false, true);
+        else if (cur == SCREEN_MAIN)   ui_switch_screen(SCREEN_STATUS, false, true);
     }
 
     /* Copy shared data snapshot and update widgets at ~2 Hz */
@@ -221,6 +237,16 @@ void loop(void) {
         struct tm timeinfo = {};
         getLocalTime(&timeinfo);
         ui_update_clock(&snapshot, &timeinfo);
+
+        /* Board battery + WiFi status */
+        int8_t bat_pct = -1;
+        bool   charging = false;
+        if (g_pmic_ok && g_pmic.isBatteryConnect()) {
+            bat_pct  = (int8_t)g_pmic.getBatteryPercent();
+            charging = g_pmic.isCharging();
+        }
+        int8_t rssi = (int8_t)WiFi.RSSI();
+        ui_update_status(WiFi.localIP().toString().c_str(), rssi, bat_pct, charging);
     }
 
     delay(5);

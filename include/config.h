@@ -25,6 +25,9 @@
 #define TOUCH_RST  40
 #define TOUCH_INT  11
 
+/* AXP2101 PMIC — shares I2C bus with CST9217 (SDA=15, SCL=14) */
+#define AXP2101_I2C_ADDR  0x34
+
 /* Application */
 #define SOLAR_MAX_W       6000      /* arc full-scale */
 #define POLL_INTERVAL_MS  5000      /* Fronius API poll period */

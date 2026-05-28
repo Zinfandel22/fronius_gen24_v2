@@ -1,5 +1,6 @@
-tzapu/WiFiManager                  @ ^2.0.17
-ayushsharma82/ElegantOTA           @ ^3.0.0
-lvgl/lvgl                          @ ^9.5.0
 bblanchon/ArduinoJson              @ ^7.4.0
 https://github.com/moononournation/Arduino_GFX.git
+ayushsharma82/ElegantOTA           @ ^3.0.0
+https://github.com/lewisxhe/XPowersLib.git
+tzapu/WiFiManager                  @ ^2.0.17
+lvgl/lvgl                          @ ^9.5.0
