@@ -45,6 +45,57 @@ static bool fetch_soc(const char *ip, float *soc_out) {
     return true;
 }
 
+static bool fetch_phases(const char *ip, float phase_w[3]) {
+    char url[128];
+    snprintf(url, sizeof(url),
+             "http://%s/solar_api/v1/GetMeterRealtimeData.cgi?Scope=System", ip);
+
+    Serial.printf("[fronius] phases GET %s\n", url);
+
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(API_TIMEOUT_MS);
+
+    int code = http.GET();
+    Serial.printf("[fronius] phases response: %d\n", code);
+    if (code != 200) {
+        http.end();
+        return false;
+    }
+
+    String body = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+        Serial.printf("[fronius] phases JSON error: %s\n", err.c_str());
+        return false;
+    }
+
+    /* System-scope response nests the first meter under Body.Data["0"] */
+    JsonObject data = doc["Body"]["Data"]["0"];
+    if (data.isNull()) {
+        Serial.println("[fronius] phases: Body.Data[0] not found");
+        return false;
+    }
+
+    const char *keys[3] = {
+        "PowerReal_P_Phase_1", "PowerReal_P_Phase_2", "PowerReal_P_Phase_3"
+    };
+    for (int i = 0; i < 3; i++) {
+        if (data[keys[i]].isNull()) {
+            Serial.printf("[fronius] phases: %s not found\n", keys[i]);
+            return false;
+        }
+        phase_w[i] = data[keys[i]].as<float>();
+    }
+
+    Serial.printf("[fronius] phases: L1=%.0f L2=%.0f L3=%.0f W\n",
+                  phase_w[0], phase_w[1], phase_w[2]);
+    return true;
+}
+
 bool fronius_fetch(const char *inverter_ip, PowerData *out) {
     char url[96];
     snprintf(url, sizeof(url),
@@ -119,6 +170,7 @@ bool fronius_fetch(const char *inverter_ip, PowerData *out) {
         out->soc_pct = soc;
     }
 
+    out->phase_valid  = fetch_phases(inverter_ip, out->phase_w);
     out->valid        = true;
     out->timestamp_ms = millis();
     return true;

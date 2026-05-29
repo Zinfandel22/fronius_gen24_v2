@@ -199,17 +199,19 @@ void loop(void) {
     TouchGesture gest = display_get_gesture();
     ScreenId cur = ui_current_screen();
     if (gest == GESTURE_SWIPE_RIGHT) {
-        if      (cur == SCREEN_MAIN)                       ui_switch_screen(SCREEN_CLOCK, false);
-        else if (cur == SCREEN_CLOCK || cur == SCREEN_PV)  ui_switch_screen(SCREEN_MAIN,  false);
-    } else if (gest == GESTURE_SWIPE_LEFT) {
         if      (cur == SCREEN_MAIN)                       ui_switch_screen(SCREEN_CLOCK, true);
         else if (cur == SCREEN_CLOCK || cur == SCREEN_PV)  ui_switch_screen(SCREEN_MAIN,  true);
+    } else if (gest == GESTURE_SWIPE_LEFT) {
+        if      (cur == SCREEN_MAIN)                       ui_switch_screen(SCREEN_CLOCK, false);
+        else if (cur == SCREEN_CLOCK || cur == SCREEN_PV)  ui_switch_screen(SCREEN_MAIN,  false);
     } else if (gest == GESTURE_SWIPE_DOWN) {
-        if      (cur == SCREEN_CLOCK)  ui_switch_screen(SCREEN_PV,     true,  true);
-        else if (cur == SCREEN_STATUS) ui_switch_screen(SCREEN_MAIN,   true,  true);
+        if      (cur == SCREEN_CLOCK)   ui_switch_screen(SCREEN_PV,     true,  true);
+        else if (cur == SCREEN_PHASES)  ui_switch_screen(SCREEN_MAIN,   true,  true);
+        else if (cur == SCREEN_STATUS)  ui_switch_screen(SCREEN_PHASES, true,  true);
     } else if (gest == GESTURE_SWIPE_UP) {
-        if      (cur == SCREEN_PV)     ui_switch_screen(SCREEN_CLOCK,  false, true);
-        else if (cur == SCREEN_MAIN)   ui_switch_screen(SCREEN_STATUS, false, true);
+        if      (cur == SCREEN_PV)      ui_switch_screen(SCREEN_CLOCK,  false, true);
+        else if (cur == SCREEN_MAIN)    ui_switch_screen(SCREEN_PHASES, false, true);
+        else if (cur == SCREEN_PHASES)  ui_switch_screen(SCREEN_STATUS, false, true);
     }
 
     /* Copy shared data snapshot and update widgets at ~2 Hz */
@@ -237,6 +239,7 @@ void loop(void) {
         struct tm timeinfo = {};
         getLocalTime(&timeinfo);
         ui_update_clock(&snapshot, &timeinfo);
+        ui_update_phases(&snapshot);
 
         /* Board battery + WiFi status */
         int8_t bat_pct = -1;

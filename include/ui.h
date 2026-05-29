@@ -8,6 +8,7 @@ typedef enum {
     SCREEN_CLOCK  = 1,   /* analog clock + battery SOC arc */
     SCREEN_PV     = 2,   /* analog clock + PV generation arc */
     SCREEN_STATUS = 3,   /* WiFi IP/RSSI + board battery SOC */
+    SCREEN_PHASES = 4,   /* PV arc + 3-phase grid power */
     SCREEN_COUNT
 } ScreenId;
 
@@ -35,5 +36,8 @@ void ui_show_boot_ip(const char *ip);
 /* Push WiFi + board-battery readings into the status screen widgets.
    bat_pct: 0-100 or -1 when PMIC/battery unavailable. */
 void ui_update_status(const char *ip, int8_t rssi, int8_t bat_pct, bool charging);
+
+/* Push PV + per-phase grid power into the phases screen widgets. */
+void ui_update_phases(const PowerData *data);
 
 ScreenId ui_current_screen(void);

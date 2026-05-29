@@ -77,6 +77,14 @@ static lv_obj_t *g_lbl_bat_state     = nullptr;
 static lv_obj_t *g_lbl_wifi_ip       = nullptr;
 static lv_obj_t *g_lbl_wifi_rssi     = nullptr;
 
+/* ---------------------------------------------------------------
+   Phases screen widgets — PV arc + 3-phase grid power
+   --------------------------------------------------------------- */
+static lv_obj_t *g_scr_phases    = nullptr;
+static lv_obj_t *g_arc_phases_pv = nullptr;
+static lv_obj_t *g_lbl_phases_pv = nullptr;
+static lv_obj_t *g_lbl_phase[3]  = {};
+
 /* Solar arc input watts (NVS "solar_input"); arc full scale = value × 1.1 */
 static uint32_t g_solar_input_w = 6000;
 
@@ -417,6 +425,59 @@ static void build_pv_screen(void) {
 }
 
 /* ---------------------------------------------------------------
+   Phases screen builder — PV arc + 3-phase grid power
+   --------------------------------------------------------------- */
+static void build_phases_screen(void) {
+    g_scr_phases = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(g_scr_phases, COL_BG, 0);
+    lv_obj_set_style_bg_opa(g_scr_phases, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g_scr_phases, LV_OBJ_FLAG_SCROLLABLE);
+
+    const int32_t ARC_SIZE = LCD_WIDTH - 8;
+    const int32_t ARC_Y    = (LCD_HEIGHT - ARC_SIZE) / 2;
+
+    /* Green PV arc — identical setup to main screen */
+    g_arc_phases_pv = lv_arc_create(g_scr_phases);
+    lv_obj_set_size(g_arc_phases_pv, ARC_SIZE, ARC_SIZE);
+    lv_obj_align(g_arc_phases_pv, LV_ALIGN_TOP_MID, 0, ARC_Y);
+    lv_arc_set_rotation(g_arc_phases_pv, 135);
+    lv_arc_set_bg_angles(g_arc_phases_pv, 0, 270);
+    lv_arc_set_range(g_arc_phases_pv, 0, (int32_t)(g_solar_input_w * 1.1f));
+    lv_arc_set_value(g_arc_phases_pv, 0);
+    lv_obj_remove_style(g_arc_phases_pv, NULL, LV_PART_KNOB);
+    lv_obj_remove_flag(g_arc_phases_pv, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_color(g_arc_phases_pv, COL_ARC_BG,    LV_PART_MAIN);
+    lv_obj_set_style_arc_width(g_arc_phases_pv, 14,            LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(g_arc_phases_pv,   LV_OPA_TRANSP,  LV_PART_MAIN);
+    lv_obj_set_style_border_width(g_arc_phases_pv, 0,          LV_PART_MAIN);
+    lv_obj_set_style_arc_color(g_arc_phases_pv, COL_SOLAR,     LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(g_arc_phases_pv, 14,            LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g_arc_phases_pv, false,       LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g_arc_phases_pv, false,       LV_PART_MAIN);
+
+    /* Solar watts label — yellow, 40pt, upper center */
+    g_lbl_phases_pv = lv_label_create(g_scr_phases);
+    lv_label_set_text(g_lbl_phases_pv, "-- W");
+    lv_obj_set_style_text_color(g_lbl_phases_pv, COL_SOLAR_LBL, 0);
+    lv_obj_set_style_text_font(g_lbl_phases_pv, &lv_font_montserrat_40, 0);
+    lv_obj_align(g_lbl_phases_pv, LV_ALIGN_TOP_MID, 0, 62);
+
+    /* Phase labels — L1 / L2 / L3, grey initially, colored per sign at runtime */
+    const int32_t phase_y[3] = { -50, 10, 70 };
+    for (int i = 0; i < 3; i++) {
+        g_lbl_phase[i] = lv_label_create(g_scr_phases);
+        lv_label_set_text(g_lbl_phase[i], i == 0 ? "L1  -- W"
+                                         : i == 1 ? "L2  -- W"
+                                                  : "L3  -- W");
+        lv_obj_set_style_text_color(g_lbl_phase[i], COL_GRID_NEUT, 0);
+        lv_obj_set_style_text_font(g_lbl_phase[i], &lv_font_montserrat_24, 0);
+        lv_obj_set_width(g_lbl_phase[i], 220);
+        lv_obj_set_style_text_align(g_lbl_phase[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(g_lbl_phase[i], LV_ALIGN_CENTER, 0, phase_y[i]);
+    }
+}
+
+/* ---------------------------------------------------------------
    Status screen builder — WiFi + board LiPo battery (AXP2101)
    --------------------------------------------------------------- */
 #define COL_STATUS_WIFI  lv_color_hex(0x85C1E9)   /* light blue */
@@ -531,6 +592,7 @@ void ui_init(void) {
 
     build_clock_screen();
     build_pv_screen();
+    build_phases_screen();
     build_status_screen();
     build_boot_screen();
     lv_scr_load(g_scr_boot);
@@ -668,7 +730,7 @@ void ui_update_clock(const PowerData *data, const struct tm *t) {
 void ui_switch_screen(ScreenId id, bool forward, bool vertical) {
     if (id == g_current || id >= SCREEN_COUNT) return;
 
-    lv_obj_t *targets[] = { g_scr_main, g_scr_clock, g_scr_pv, g_scr_status };
+    lv_obj_t *targets[] = { g_scr_main, g_scr_clock, g_scr_pv, g_scr_status, g_scr_phases };
     lv_scr_load_anim_t anim;
     if (vertical) {
         anim = forward ? LV_SCR_LOAD_ANIM_MOVE_TOP : LV_SCR_LOAD_ANIM_MOVE_BOTTOM;
@@ -687,6 +749,9 @@ void ui_set_solar_max(uint32_t w) {
     lv_arc_set_range(g_arc_pv, 0, (uint32_t)(w * 1.1f));
     lv_arc_set_value(g_arc_pv, lv_arc_get_value(g_arc_pv));
     lv_obj_invalidate(g_arc_pv);
+    lv_arc_set_range(g_arc_phases_pv, 0, (uint32_t)(w * 1.1f));
+    lv_arc_set_value(g_arc_phases_pv, lv_arc_get_value(g_arc_phases_pv));
+    lv_obj_invalidate(g_arc_phases_pv);
 }
 
 void ui_show_boot_ip(const char *ip) {
@@ -696,6 +761,57 @@ void ui_show_boot_ip(const char *ip) {
 
 ScreenId ui_current_screen(void) {
     return g_current;
+}
+
+void ui_update_phases(const PowerData *data) {
+    /* Solar arc + label */
+    if (data->valid) {
+        int32_t pv = (int32_t)fminf(data->solar_w, g_solar_input_w * 1.1f);
+        lv_arc_set_value(g_arc_phases_pv, pv);
+        lv_obj_invalidate(g_arc_phases_pv);
+        char buf[16];
+        if (data->solar_w < 1.0f) {
+            lv_label_set_text(g_lbl_phases_pv, "-- W");
+        } else {
+            snprintf(buf, sizeof(buf), "%.0f W", data->solar_w);
+            lv_label_set_text(g_lbl_phases_pv, buf);
+        }
+    } else {
+        lv_arc_set_value(g_arc_phases_pv, 0);
+        lv_obj_invalidate(g_arc_phases_pv);
+        lv_label_set_text(g_lbl_phases_pv, "-- W");
+    }
+
+    /* Phase labels */
+    if (!data->valid || !data->phase_valid) {
+        const char *dash[3] = {"L1  -- W", "L2  -- W", "L3  -- W"};
+        for (int i = 0; i < 3; i++) {
+            lv_label_set_text(g_lbl_phase[i], dash[i]);
+            lv_obj_set_style_text_color(g_lbl_phase[i], COL_GRID_NEUT, 0);
+        }
+        return;
+    }
+
+    const char *prefix[3] = {"L1", "L2", "L3"};
+    for (int i = 0; i < 3; i++) {
+        float w = data->phase_w[i];
+        lv_color_t col;
+        if (fabsf(w) < 20.0f) {
+            col = COL_GRID_NEUT;
+        } else if (w < 0.0f) {
+            col = COL_GRID_IMPORT;
+        } else {
+            col = COL_GRID_EXPORT;
+        }
+        char buf[24];
+        if (fabsf(w) < 1.0f) {
+            snprintf(buf, sizeof(buf), "%s  -- W", prefix[i]);
+        } else {
+            snprintf(buf, sizeof(buf), "%s  %+.0f W", prefix[i], w);
+        }
+        lv_label_set_text(g_lbl_phase[i], buf);
+        lv_obj_set_style_text_color(g_lbl_phase[i], col, 0);
+    }
 }
 
 void ui_update_status(const char *ip, int8_t rssi, int8_t bat_pct, bool charging) {
