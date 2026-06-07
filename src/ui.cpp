@@ -533,6 +533,8 @@ static void build_status_screen(void) {
     lv_obj_set_style_text_font(g_lbl_wifi_rssi, &lv_font_montserrat_16, 0);
     lv_obj_set_width(g_lbl_wifi_rssi, 300);
     lv_obj_set_style_text_align(g_lbl_wifi_rssi, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(g_lbl_wifi_rssi, COL_BG, 0);
+    lv_obj_set_style_bg_opa(g_lbl_wifi_rssi, LV_OPA_COVER, 0);
     lv_obj_align(g_lbl_wifi_rssi, LV_ALIGN_TOP_MID, 0, 128);
 
     /* Battery % — large, shifted below center to balance WiFi section above */

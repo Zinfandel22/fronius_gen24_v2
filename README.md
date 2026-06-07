@@ -211,6 +211,6 @@ Open at 115200 baud. Normal startup looks like:
 |---|---|
 | `GET /solar_api/v1/GetPowerFlowRealtimeData.fcgi` | PV watts, consumption, grid, battery SOC |
 | `GET /solar_api/v1/GetMeterRealtimeData.cgi?Scope=System` | Per-phase grid power (L1/L2/L3) |
-| `GET /solar_api/v1/GetStorageRealtimeData.fcgi?Scope=System` | Battery SOC fallback (older firmware) |
+| `GET /solar_api/v1/GetStorageRealtimeData.cgi?Scope=System` | Battery SOC fallback (older firmware) |
 
 The inverter is polled every 5 seconds. Per-phase data requires a Fronius Smart Meter connected to the inverter.

@@ -8,7 +8,7 @@
 static bool fetch_soc(const char *ip, float *soc_out) {
     char url[96];
     snprintf(url, sizeof(url),
-             "http://%s/solar_api/v1/GetStorageRealtimeData.fcgi?Scope=System", ip);
+             "http://%s/solar_api/v1/GetStorageRealtimeData.cgi?Scope=System", ip);
 
     Serial.printf("[fronius] SOC fallback GET %s\n", url);
 
