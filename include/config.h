@@ -38,5 +38,5 @@
 #define WIFI_AP_NAME "Fronius-Monitor"
 
 /* Timezone for NTP clock (seconds east of UTC) */
-#define TZ_OFFSET_SEC   3600   /* UTC+1 CET  */
+#define TZ_OFFSET_SEC   -3600*6   /* UTC+1 CET  */
 #define DST_OFFSET_SEC  3600   /* +1 h CEST  */
