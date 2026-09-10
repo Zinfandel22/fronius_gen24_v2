@@ -131,11 +131,10 @@ To clear all saved settings and re-enter the setup portal:
 
 ### Timezone
 
-Edit `include/config.h` and rebuild:
+The default timezone is Australian Eastern time with automatic daylight saving. Edit `TZ_RULE` in `include/config.h` and rebuild if your location differs:
 
 ```cpp
-#define TZ_OFFSET_SEC   3600   /* seconds east of UTC — e.g. 3600 for CET  */
-#define DST_OFFSET_SEC  3600   /* daylight saving offset — e.g. 3600 for CEST */
+#define TZ_RULE "AEST-10AEDT-11,M10.1.0,M4.1.0/3"
 ```
 
 ## OTA firmware update

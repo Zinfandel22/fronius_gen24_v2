@@ -239,7 +239,7 @@ void display_driver_init(void) {
     lv_init();
     lv_tick_set_cb((lv_tick_get_cb_t)millis);
 
-    const size_t buf_px    = LCD_WIDTH * (LCD_HEIGHT / 10);
+    const size_t buf_px    = LCD_WIDTH * LCD_HEIGHT;
     const size_t buf_bytes = buf_px * sizeof(lv_color_t);
     g_buf1 = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
     g_buf2 = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
@@ -247,7 +247,7 @@ void display_driver_init(void) {
     lv_display_t *disp = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
     lv_display_set_flush_cb(disp, lvgl_flush_cb);
     lv_display_set_buffers(disp, g_buf1, g_buf2, buf_bytes,
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+                           LV_DISPLAY_RENDER_MODE_FULL);
 
     lv_indev_t *indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);

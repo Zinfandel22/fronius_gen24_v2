@@ -171,7 +171,7 @@ void setup(void) {
     Serial.printf("[ota] update page at http://%s/update\n",
                   WiFi.localIP().toString().c_str());
 
-    configTime(TZ_OFFSET_SEC, DST_OFFSET_SEC, "pool.ntp.org");
+    configTzTime(TZ_RULE, "pool.ntp.org");
     Serial.println("[boot] NTP sync started");
 
     g_data_mutex = xSemaphoreCreateMutex();

@@ -37,6 +37,5 @@
 /* WiFi AP name shown when no credentials are stored */
 #define WIFI_AP_NAME "Fronius-Monitor"
 
-/* Timezone for NTP clock (seconds east of UTC) */
-#define TZ_OFFSET_SEC   -3600*6   /* UTC+1 CET  */
-#define DST_OFFSET_SEC  3600   /* +1 h CEST  */
+/* POSIX timezone: AEST (UTC+10), AEDT (UTC+11), Australian DST rules */
+#define TZ_RULE "AEST-10AEDT-11,M10.1.0,M4.1.0/3"
