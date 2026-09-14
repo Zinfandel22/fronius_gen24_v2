@@ -64,6 +64,27 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
    --------------------------------------------------------------- */
 static volatile TouchGesture g_last_gesture = GESTURE_NONE;
 
+static bool touch_reinit(void) {
+    Serial.println("[touch] resetting and reinitialising CST9217");
+
+    digitalWrite(TOUCH_RST, LOW);
+    delay(15);
+    digitalWrite(TOUCH_RST, HIGH);
+    delay(50);
+
+    Wire.end();
+    Wire.begin(TOUCH_SDA, TOUCH_SCL);
+    Wire.setClock(100000);
+
+    g_touch.setPins(TOUCH_RST, TOUCH_INT);
+    if (!g_touch.begin(Wire, TOUCH_I2C_ADDR, TOUCH_SDA, TOUCH_SCL)) {
+        Serial.println("[touch] re-init failed");
+        return false;
+    }
+    Serial.println("[touch] re-init OK");
+    return true;
+}
+
 static void touch_reset(void) {
     digitalWrite(TOUCH_RST, LOW);
     delay(10);
@@ -130,25 +151,47 @@ static void i2c_bus_recover(void) {
 }
 
 static bool cst9217_read(uint16_t *x, uint16_t *y, uint8_t *num_points) {
-    int16_t raw_x = 0;
-    int16_t raw_y = 0;
-    *num_points = g_touch.getPoint(&raw_x, &raw_y, 1);
-    if (*num_points == 0 || raw_x < 0 || raw_y < 0) return false;
+    for (uint8_t attempt = 0; attempt < 3; ++attempt) {
+        int16_t raw_x = 0;
+        int16_t raw_y = 0;
+        *num_points = g_touch.getPoint(&raw_x, &raw_y, 1);
 
-    *x = (uint16_t)raw_x;
-    *y = (uint16_t)raw_y;
-    if (*x >= LCD_WIDTH || *y >= LCD_HEIGHT) {
-        *num_points = 0;
-        return false;
+        if (*num_points == 0 || raw_x < 0 || raw_y < 0) {
+            if (attempt < 2) {
+                Serial.printf("[touch] invalid read attempt %u/%u, retrying\n",
+                              attempt + 1, 3);
+                if (!touch_reinit()) {
+                    return false;
+                }
+                continue;
+            }
+            return false;
+        }
+
+        *x = (uint16_t)raw_x;
+        *y = (uint16_t)raw_y;
+        if (*x >= LCD_WIDTH || *y >= LCD_HEIGHT) {
+            if (attempt < 2) {
+                Serial.printf("[touch] out-of-range point (%u,%u), retrying\n", *x, *y);
+                if (!touch_reinit()) {
+                    return false;
+                }
+                continue;
+            }
+            *num_points = 0;
+            return false;
+        }
+
+        /* Touch coordinates are reported in the panel's unrotated orientation. */
+        if (LCD_ROTATION == 1) {
+            uint16_t rotated_x = *x;
+            *x = *y;
+            *y = LCD_WIDTH - 1 - rotated_x;
+        }
+        return true;
     }
 
-    /* Touch coordinates are reported in the panel's unrotated orientation. */
-    if (LCD_ROTATION == 1) {
-        uint16_t raw_x = *x;
-        *x = *y;
-        *y = LCD_WIDTH - 1 - raw_x;
-    }
-    return true;
+    return false;
 }
 
 /* ---------------------------------------------------------------

@@ -75,10 +75,20 @@ static void wifi_setup(void) {
     /* Load stored inverter IP, solar max, and timezone rule */
     Preferences prefs;
     prefs.begin("fronius", true);
+    uint8_t config_version = prefs.getUChar("cfg_version", 0);
     String stored = prefs.getString("ip", "");
     uint32_t stored_solar = prefs.getUInt("solar_input", 6000);
     String stored_timezone = prefs.getString("tz_rule", TZ_RULE);
     prefs.end();
+
+    if (config_version != 1) {
+        Serial.printf("[wifi] no valid config version found (got %u); using defaults\n",
+                      (unsigned)config_version);
+        stored = "";
+        stored_solar = 6000;
+        stored_timezone = TZ_RULE;
+    }
+
     if (stored.length() > 0) {
         stored.toCharArray(g_inverter_ip, sizeof(g_inverter_ip));
     }
@@ -146,6 +156,7 @@ static void wifi_setup(void) {
     Serial.printf("[wifi] timezone to use: '%s'\n", g_timezone_rule);
 
     prefs.begin("fronius", false);
+    prefs.putUChar("cfg_version", 1);
     prefs.putString("ip", g_inverter_ip);
     prefs.putUInt("solar_input", solar_val);
     prefs.putString("tz_rule", g_timezone_rule);
