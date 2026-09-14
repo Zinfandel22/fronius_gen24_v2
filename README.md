@@ -114,6 +114,7 @@ On first boot — or whenever saved WiFi credentials are missing — the board o
    - **WiFi network** — your home network SSID and password.
    - **Inverter IP Address** — the local IP of your Fronius GEN24 inverter (e.g. `192.168.1.120`). Find it in the Fronius Solar.web app or your router's DHCP table.
    - **Solar Max Watts** — the peak DC input capacity of your inverter (e.g. `6000`). This sets the full-scale value of the solar arc.
+   - **Timezone POSIX rule** — the timezone rule for the display clock. The default is `AEST-10AEDT-11,M10.1.0,M4.1.0/3` for Australian Eastern time with automatic daylight saving.
 5. Click **Save**.
 
 The board reboots, connects to your WiFi, and begins polling the inverter. The boot screen displays the assigned IP address for 4 seconds before switching to the Main screen.
@@ -131,11 +132,25 @@ To clear all saved settings and re-enter the setup portal:
 
 ### Timezone
 
-The default timezone is Australian Eastern time with automatic daylight saving. Edit `TZ_RULE` in `include/config.h` and rebuild if your location differs:
+The default timezone is Australian Eastern time with automatic daylight saving. You can change it in the WiFi setup portal without rebuilding. The value must be a POSIX timezone rule, for example:
 
 ```cpp
 #define TZ_RULE "AEST-10AEDT-11,M10.1.0,M4.1.0/3"
 ```
+
+This is the rule currently used in the project and matches the timezone selection shown on the setup portal.
+
+### Display rotation and AMOLED artifact fix
+
+The Waveshare AMOLED panel is mounted with a 90° clockwise rotation in software, which is configured as:
+
+```cpp
+#define LCD_ROTATION 1
+```
+
+This keeps the UI upright and aligns the touch coordinates with the rotated display output. The touch calibration logic also rotates the reported coordinates back into the correct screen space.
+
+When the panel showed horizontal line artifacts / scan-line corruption during LVGL rendering, the fix was to switch the display path to a full-frame PSRAM buffer and render the whole screen in one pass using `LV_DISPLAY_RENDER_MODE_FULL` instead of partial tile updates. The render callback also rotates the full-screen frame before sending it to the CO5300 panel. This change is important if you are debugging visual artifacts on the display and is already included in the current firmware.
 
 ## OTA firmware update
 

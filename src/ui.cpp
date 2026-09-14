@@ -191,7 +191,7 @@ static void build_main_screen(void) {
     lv_obj_set_style_text_align(g_lbl_soc, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_bg_color(g_lbl_soc, COL_BG, 0);
     lv_obj_set_style_bg_opa(g_lbl_soc, LV_OPA_COVER, 0);
-    lv_label_set_text(g_lbl_soc, "Bat: --%");
+    lv_label_set_text(g_lbl_soc, "");
     lv_obj_align(g_lbl_soc, LV_ALIGN_CENTER, 0, 0);
 
     /* --- Grid (centre, shifted down) --- */
@@ -604,6 +604,7 @@ void ui_update(const PowerData *data) {
     if (!data->valid) {
         lv_label_set_text(g_lbl_nodata, "No data");
         lv_label_set_text(g_lbl_inverter, "Inv: -- W");
+        lv_label_set_text(g_lbl_soc, "");
         return;
     }
     lv_label_set_text(g_lbl_nodata, "");
@@ -637,7 +638,7 @@ void ui_update(const PowerData *data) {
     /* Battery SOC — colour reflects charge state */
     if (data->soc_pct < 0.0f) {
         lv_obj_set_style_text_color(g_lbl_soc, COL_BAT_FULL, 0);
-        lv_label_set_text(g_lbl_soc, "Bat: --%");
+        lv_label_set_text(g_lbl_soc, "");
     } else {
         lv_color_t bat_col;
         if (data->battery_w > 20.0f) {

@@ -16,5 +16,8 @@ enum TouchGesture : uint8_t {
  */
 void display_driver_init(void);
 
+/* Set panel brightness from 0 (off) to 255 (maximum). */
+void display_set_brightness(uint8_t brightness);
+
 /* Returns the last swipe gesture detected; cleared after each read. */
 TouchGesture display_get_gesture(void);

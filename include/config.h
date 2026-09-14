@@ -9,6 +9,7 @@
 /* Display: CO5300, QSPI */
 #define LCD_WIDTH   466
 #define LCD_HEIGHT  466
+#define LCD_ROTATION 1  /* Arduino_GFX: 90 degrees clockwise */
 
 #define LCD_CS    12
 #define LCD_SCLK  38
@@ -33,6 +34,10 @@
 #define POLL_INTERVAL_MS  5000      /* Fronius API poll period */
 #define API_TIMEOUT_MS    4000      /* HTTP timeout */
 #define FAIL_THRESHOLD    3         /* consecutive failures before "no data" */
+#define DISPLAY_BRIGHTNESS_DAY    255
+#define DISPLAY_BRIGHTNESS_NIGHT   20
+#define DISPLAY_DIM_HOUR           22
+#define DISPLAY_WAKE_HOUR           7
 
 /* WiFi AP name shown when no credentials are stored */
 #define WIFI_AP_NAME "Fronius-Monitor"

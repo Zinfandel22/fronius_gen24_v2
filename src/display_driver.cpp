@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Arduino_GFX_Library.h>
+#include <TouchDrvCSTXXX.hpp>
 #include <lvgl.h>
 
 /* ---------------------------------------------------------------
@@ -12,19 +13,37 @@
 static Arduino_DataBus *g_bus = new Arduino_ESP32QSPI(
     LCD_CS, LCD_SCLK, LCD_SDA0, LCD_SDA1, LCD_SDA2, LCD_SDA3);
 
-static Arduino_GFX *g_gfx = new Arduino_CO5300(
+static Arduino_CO5300 *g_gfx = new Arduino_CO5300(
     g_bus, LCD_RST, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
+static TouchDrvCST92xx g_touch;
 
 /* ---------------------------------------------------------------
    LVGL display buffers — allocated from PSRAM
    --------------------------------------------------------------- */
 static uint8_t *g_buf1 = nullptr;
 static uint8_t *g_buf2 = nullptr;
+static uint8_t *g_rot_buf = nullptr;
 
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
-    g_gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)px_map, w, h);
+
+    if (LCD_ROTATION == 1 &&
+        area->x1 == 0 && area->y1 == 0 &&
+        area->x2 == LCD_WIDTH - 1 && area->y2 == LCD_HEIGHT - 1) {
+        const uint16_t *source = (const uint16_t *)px_map;
+        uint16_t *rotated = (uint16_t *)g_rot_buf;
+
+        for (uint32_t y = 0; y < LCD_HEIGHT; y++) {
+            for (uint32_t x = 0; x < LCD_WIDTH; x++) {
+                rotated[x * LCD_WIDTH + (LCD_WIDTH - 1 - y)] =
+                    source[y * LCD_WIDTH + x];
+            }
+        }
+        g_gfx->draw16bitRGBBitmap(0, 0, rotated, LCD_WIDTH, LCD_HEIGHT);
+    } else {
+        g_gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)px_map, w, h);
+    }
     lv_display_flush_ready(disp);
 }
 
@@ -111,62 +130,23 @@ static void i2c_bus_recover(void) {
 }
 
 static bool cst9217_read(uint16_t *x, uint16_t *y, uint8_t *num_points) {
-    /* Step 1: write register address 0xD000, then read 15 bytes */
-    Wire.beginTransmission(TOUCH_I2C_ADDR);
-    Wire.write(0xD0);
-    Wire.write(0x00);
-    if (Wire.endTransmission(true) != 0) {
-        i2c_bus_recover();
-        *num_points = 0;
-        return false;
-    }
-    delayMicroseconds(200);
+    int16_t raw_x = 0;
+    int16_t raw_y = 0;
+    *num_points = g_touch.getPoint(&raw_x, &raw_y, 1);
+    if (*num_points == 0 || raw_x < 0 || raw_y < 0) return false;
 
-    uint8_t buf[15] = {0};
-    uint8_t received = Wire.requestFrom((uint8_t)TOUCH_I2C_ADDR, (uint8_t)sizeof(buf));
-    if (received < (uint8_t)sizeof(buf)) {
-        while (Wire.available()) Wire.read();
-        i2c_bus_recover();
-        *num_points = 0;
-        return false;
-    }
-    for (size_t i = 0; i < sizeof(buf); i++) {
-        buf[i] = Wire.read();
-    }
-
-    /* Step 2: send ACK {0xD0, 0x00, 0xAB} — mandatory after every read.
-     * Without this the chip stays in "pending ACK" state and refuses the
-     * next transaction, causing the ESP_ERR_INVALID_STATE cascade. */
-    Wire.beginTransmission(TOUCH_I2C_ADDR);
-    Wire.write(0xD0);
-    Wire.write(0x00);
-    Wire.write(0xAB);
-    if (Wire.endTransmission(true) != 0) {
-        i2c_bus_recover();
-    }
-
-    /* Validate: buf[0] must not be 0xAB and buf[6] must equal 0xAB */
-    if (buf[0] == 0xAB || buf[6] != 0xAB) {
-        *num_points = 0;
-        return false;
-    }
-
-    *num_points = buf[5] & 0x7F;
-    if (*num_points == 0) return false;
-
-    /* First touch point starts at buf[0] (not buf+6 as previously coded).
-     * Event 0x06 = finger pressed; anything else (0x00 = released) = no touch. */
-    if ((buf[0] & 0x0F) != 0x06) {
-        *num_points = 0;
-        return false;
-    }
-
-    *x = ((uint16_t)buf[1] << 4) | (buf[3] >> 4);
-    *y = ((uint16_t)buf[2] << 4) | (buf[3] & 0x0F);
-
+    *x = (uint16_t)raw_x;
+    *y = (uint16_t)raw_y;
     if (*x >= LCD_WIDTH || *y >= LCD_HEIGHT) {
         *num_points = 0;
         return false;
+    }
+
+    /* Touch coordinates are reported in the panel's unrotated orientation. */
+    if (LCD_ROTATION == 1) {
+        uint16_t raw_x = *x;
+        *x = *y;
+        *y = LCD_WIDTH - 1 - raw_x;
     }
     return true;
 }
@@ -228,10 +208,12 @@ static void lvgl_touch_cb(lv_indev_t *indev, lv_indev_data_t *data) {
    Public API
    --------------------------------------------------------------- */
 void display_driver_init(void) {
-    pinMode(TOUCH_RST, OUTPUT);
-    touch_reset();
-    Wire.begin(TOUCH_SDA, TOUCH_SCL);
-    Wire.setClock(100000);   /* 100 kHz — reliable for CST9217 over PCB traces */
+    g_touch.setPins(TOUCH_RST, TOUCH_INT);
+    if (!g_touch.begin(Wire, TOUCH_I2C_ADDR, TOUCH_SDA, TOUCH_SCL)) {
+        Serial.println("[touch] CST9217 initialization failed");
+    } else {
+        Serial.println("[touch] CST9217 initialized");
+    }
 
     g_gfx->begin();
     g_gfx->fillScreen(0x0000);  /* RGB565 black */
@@ -243,6 +225,7 @@ void display_driver_init(void) {
     const size_t buf_bytes = buf_px * sizeof(lv_color_t);
     g_buf1 = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
     g_buf2 = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
+    g_rot_buf = (uint8_t *)heap_caps_malloc(buf_bytes, MALLOC_CAP_SPIRAM);
 
     lv_display_t *disp = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
     lv_display_set_flush_cb(disp, lvgl_flush_cb);
@@ -252,6 +235,10 @@ void display_driver_init(void) {
     lv_indev_t *indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, lvgl_touch_cb);
+}
+
+void display_set_brightness(uint8_t brightness) {
+    g_gfx->setBrightness(brightness);
 }
 
 TouchGesture display_get_gesture(void) {

@@ -22,6 +22,7 @@ static SemaphoreHandle_t g_data_mutex = nullptr;
 
 /* Inverter IP stored in NVS, filled by WiFiManager on first boot */
 static char g_inverter_ip[16] = "192.168.1.1";
+static char g_timezone_rule[64] = TZ_RULE;
 
 static WebServer g_ota_server(80);
 
@@ -71,17 +72,23 @@ static void fronius_task(void *arg) {
    Blocks until connected. Inverter IP saved to / loaded from NVS.
    --------------------------------------------------------------- */
 static void wifi_setup(void) {
-    /* Load stored inverter IP and solar max */
+    /* Load stored inverter IP, solar max, and timezone rule */
     Preferences prefs;
     prefs.begin("fronius", true);
     String stored = prefs.getString("ip", "");
     uint32_t stored_solar = prefs.getUInt("solar_input", 6000);
+    String stored_timezone = prefs.getString("tz_rule", TZ_RULE);
     prefs.end();
     if (stored.length() > 0) {
         stored.toCharArray(g_inverter_ip, sizeof(g_inverter_ip));
     }
+    if (stored_timezone.length() > 0 &&
+        stored_timezone.length() < sizeof(g_timezone_rule)) {
+        stored_timezone.toCharArray(g_timezone_rule, sizeof(g_timezone_rule));
+    }
     Serial.printf("[wifi] stored inverter IP: '%s', solar max: %lu W\n",
                   g_inverter_ip, (unsigned long)stored_solar);
+    Serial.printf("[wifi] stored timezone: '%s'\n", g_timezone_rule);
 
     /* Check for factory-reset gesture: hold touch INT low for 3 s at boot */
     pinMode(TOUCH_INT, INPUT_PULLUP);
@@ -106,10 +113,13 @@ static void wifi_setup(void) {
         "inverter_ip", "Inverter IP Address", g_inverter_ip, 16);
     WiFiManagerParameter solar_param(
         "solar_input", "Solar Max Watts", solar_buf, 6);
+    WiFiManagerParameter timezone_param(
+        "tz_rule", "Timezone POSIX rule", g_timezone_rule, sizeof(g_timezone_rule));
 
     WiFiManager wm;
     wm.addParameter(&ip_param);
     wm.addParameter(&solar_param);
+    wm.addParameter(&timezone_param);
     wm.setConfigPortalTimeout(180);
     wm.setDebugOutput(true);   /* WiFiManager logs to Serial */
 
@@ -127,9 +137,18 @@ static void wifi_setup(void) {
     if (solar_val < 100 || solar_val > 99999) solar_val = 6000;
     Serial.printf("[wifi] solar max to use: %lu W\n", (unsigned long)solar_val);
 
+    if (strlen(timezone_param.getValue()) > 0 &&
+        strlen(timezone_param.getValue()) < sizeof(g_timezone_rule)) {
+        strlcpy(g_timezone_rule, timezone_param.getValue(), sizeof(g_timezone_rule));
+    } else {
+        strlcpy(g_timezone_rule, TZ_RULE, sizeof(g_timezone_rule));
+    }
+    Serial.printf("[wifi] timezone to use: '%s'\n", g_timezone_rule);
+
     prefs.begin("fronius", false);
     prefs.putString("ip", g_inverter_ip);
     prefs.putUInt("solar_input", solar_val);
+    prefs.putString("tz_rule", g_timezone_rule);
     prefs.end();
 
     ui_set_solar_max(solar_val);
@@ -171,8 +190,8 @@ void setup(void) {
     Serial.printf("[ota] update page at http://%s/update\n",
                   WiFi.localIP().toString().c_str());
 
-    configTzTime(TZ_RULE, "pool.ntp.org");
-    Serial.println("[boot] NTP sync started");
+    configTzTime(g_timezone_rule, "pool.ntp.org");
+    Serial.printf("[boot] NTP sync started for timezone '%s'\n", g_timezone_rule);
 
     g_data_mutex = xSemaphoreCreateMutex();
 
@@ -238,6 +257,19 @@ void loop(void) {
 
         struct tm timeinfo = {};
         getLocalTime(&timeinfo);
+        if (timeinfo.tm_year >= 100) {
+            bool night = timeinfo.tm_hour >= DISPLAY_DIM_HOUR ||
+                         timeinfo.tm_hour < DISPLAY_WAKE_HOUR;
+            static int last_brightness = -1;
+            int brightness = night ? DISPLAY_BRIGHTNESS_NIGHT
+                                   : DISPLAY_BRIGHTNESS_DAY;
+            if (brightness != last_brightness) {
+                display_set_brightness((uint8_t)brightness);
+                last_brightness = brightness;
+                Serial.printf("[display] brightness=%d (%s)\n",
+                              brightness, night ? "night" : "day");
+            }
+        }
         ui_update_clock(&snapshot, &timeinfo);
         ui_update_phases(&snapshot);
 

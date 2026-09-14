@@ -1,6 +1,7 @@
-bblanchon/ArduinoJson              @ ^7.4.0
-lvgl/lvgl                          @ ^9.5.0
-ayushsharma82/ElegantOTA           @ ^3.0.0
-https://github.com/lewisxhe/XPowersLib.git
-tzapu/WiFiManager                  @ ^2.0.17
 moononournation/GFX Library for Arduino @ 1.6.4
+tzapu/WiFiManager                  @ ^2.0.17
+https://github.com/lewisxhe/XPowersLib.git
+ayushsharma82/ElegantOTA           @ ^3.0.0
+bblanchon/ArduinoJson              @ ^7.4.0
+https://github.com/lewisxhe/SensorLib.git
+lvgl/lvgl                          @ ^9.5.0
